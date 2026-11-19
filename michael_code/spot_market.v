@@ -1,6 +1,6 @@
 From stdpp Require Import gmap finite.
 
-(* STUB (Michael): compatibility with stdpp 1.12. Upstream is written against a
+(* STUB : compatibility with stdpp 1.12. Upstream is written against a
    newer stdpp, where lookup_insert is the decide form and the old lemma is
    lookup_insert_eq. These shadow stdpp's names in this file only (Import, not
    Export), and are harmless on newer stdpp. Delete once stdpp is upgraded. *)
