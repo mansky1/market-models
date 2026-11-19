@@ -54,6 +54,34 @@ Proof.
   rewrite map_lookup_filter_Some; auto.
 Qed.
 
+Lemma drop_none : ∀ pr alloc (Hover : ∀ r a, alloc !! r = Some (Some a) → pr ≤ bid a),
+  drop_resources pr alloc = alloc.
+Proof.
+  intros; apply map_eq; intros.
+  unfold drop_resources; rewrite lookup_fmap.
+  destruct (alloc !! i) eqn: Hi; last done; simpl.
+  destruct o; last done.
+  destruct (Nat.leb_spec0 pr (bid p)); first done.
+  contradiction n; by eapply Hover.
+Qed.
+
+Lemma buy_unused : ∀ pr alloc alloc' (Hbuy : buy_resources pr alloc alloc'),
+  ∀ r, alloc' !! r = Some None → alloc !! r = Some None.
+Proof.
+  intros ??? (? & -> & _) ?.
+  rewrite map_lookup_imap.
+  destruct (alloc !! r) eqn: Hr; try done; simpl.
+  destruct (x !! r); by inversion 1.
+Qed.
+
+Lemma buy_maintains : ∀ pr alloc alloc' (Hbuy : buy_resources pr alloc alloc'),
+  ∀ r a, alloc !! r = Some (Some a) → alloc' !! r = Some (Some a).
+Proof.
+  intros ??? (? & -> & Hconds) ?? Hr.
+  rewrite map_lookup_imap, Hr; simpl.
+  destruct Hconds as (Hcond & _); erewrite Hcond; eauto.
+Qed.
+
 Lemma imap_dom : ∀ (A : gmap resource (option participant)) (B : gmap resource participant),
   dom (map_imap (λ r o, match B !! r with Some a => Some (Some a) | _ => Some o end) A) = dom A.
 Proof.
@@ -74,27 +102,38 @@ Proof.
 Qed.
 
 Definition valid_state (q : state) :=
+  (* allocated resources are allocated to buyers who want to pay for them *)
+  (∀ r a, q.(allocation) !! r = Some (Some a) → q.(price) ≤ bid a) ∧
   (* if a resource is unallocated, no one wanted to buy it *)
   (∀ r, q.(allocation) !! r = Some None → ∀ a, q.(price) ≤ bid a →
     ∃ r', q.(allocation) !! r' = Some (Some a)).
 
 Lemma valid_inv : ∀ q q' (Hvalid : valid_state q) (Hstep : market_step q q'), valid_state q'.
 Proof.
-  intros.
-  unfold valid_state; intros r Hr ? Hbid.
-  assert (∃ o, q.(allocation) !! r = Some o) as (o & Ho).
-  { apply elem_of_dom.
-    rewrite <- (market_step_dom _ _ Hstep).
-    by apply elem_of_dom. }
-  destruct Hstep as (alloc' & Hq' & Hconds).
-  rewrite Hq', map_lookup_imap in Hr.
-  unfold drop_resources in *.
-  rewrite lookup_fmap, Ho in Hr; simpl in Hr.
-  destruct (alloc' !! r) eqn: Ho'; inv Hr.
-  destruct Hconds as (? & ? & ? & HNone); eapply HNone in Ho'; eauto.
-  rewrite lookup_fmap, Ho; simpl.
-  destruct o; last done.
-  by destruct (Nat.leb_spec0 q'.(price) (bid p)).
+  intros; split.
+  - destruct Hstep as (alloc' & -> & Hconds).
+    intros ??; rewrite map_lookup_imap.
+    unfold drop_resources; rewrite lookup_fmap.
+    destruct (q.(allocation) !! r) eqn: Hr; last done; simpl.
+    destruct (alloc' !! r) eqn: Hr'.
+    + inversion 1; subst.
+      destruct Hconds as (_ & _ & Hprice & _); eauto.
+    + destruct o; inversion 1.
+      destruct (Nat.leb_spec0 q'.(price) (bid p)); by inv H3.
+  - unfold valid_state; intros r Hr ? Hbid.
+    assert (∃ o, q.(allocation) !! r = Some o) as (o & Ho).
+    { apply elem_of_dom.
+      rewrite <- (market_step_dom _ _ Hstep).
+      by apply elem_of_dom. }
+    destruct Hstep as (alloc' & Hq' & Hconds).
+    rewrite Hq', map_lookup_imap in Hr.
+    unfold drop_resources in *.
+    rewrite lookup_fmap, Ho in Hr; simpl in Hr.
+    destruct (alloc' !! r) eqn: Ho'; inv Hr.
+    destruct Hconds as (? & ? & ? & HNone); eapply HNone in Ho'; eauto.
+    rewrite lookup_fmap, Ho; simpl.
+    destruct o; last done.
+    by destruct (Nat.leb_spec0 q'.(price) (bid p)).
 Qed.
 
 Theorem monotonic_increasing : ∀ q q' (Hvalid : valid_state q) (Hstep : market_step q q')
@@ -113,7 +152,7 @@ Proof.
     by apply elem_of_dom. }
   exists o; split; first done.
   intros ->.
-  pose proof (Hvalid _ Ho) as Hfull.
+  pose proof ((proj2 Hvalid) _ Ho) as Hfull.
   destruct Hstep as (alloc' & Hq' & Hconds).
   rewrite Hq' in Hdrop.
   unfold drop_resources in *; rewrite map_lookup_imap, lookup_fmap, Ho in Hdrop; simpl in Hdrop.
@@ -124,6 +163,24 @@ Proof.
   eapply Hunused in Ho'.
   rewrite lookup_fmap, Ha in Ho'; simpl in Ho'.
   by destruct (Nat.leb_spec0 q'.(price) (bid a)).
+Qed.
+
+Definition alloc_incl : relation (gmap resource (option participant)) :=
+  map_included (λ _ a b, match a with None => True | _ => a = b end).
+
+Theorem monotonic_decreasing : ∀ q q' (Hvalid : valid_state q) (Hstep : market_step q q')
+    (Hincr : q'.(price) ≤ q.(price)), alloc_incl q.(allocation) q'.(allocation).
+Proof.
+  intros ??????.
+  pose proof (market_step_dom _ _ Hstep) as Hdom.
+  unfold market_step in Hstep.
+  rewrite drop_none in Hstep.
+  2: { intros ???%Hvalid; lia. }
+  destruct (q.(allocation) !! i) eqn: Hq, (q'.(allocation) !! i) eqn: Hq'; try done; simpl.
+  2: { rewrite <- not_elem_of_dom, Hdom, not_elem_of_dom in Hq'; congruence. }
+  destruct o; last done.
+  eapply buy_maintains in Hstep; last done.
+  congruence.
 Qed.
 
 End big_step.
@@ -140,19 +197,73 @@ Proof.
       unfold bid; rewrite lookup_empty; lia.
   - destruct IHbid_map as (alloc' & Hbuy).
     destruct (decide (pr ≤ x)).    
-    + (* if there is a resource r still available, exists <[r := Some i]>alloc',
+    + (* if i needs a resource and r is still available, exists <[r := Some i]>alloc',
          else exists alloc' *)
-      admit.
+      destruct (decide (map_Exists (λ _ s, s = Some i) alloc)) as [(r & ? & Hr & ->) | Hneed]; last
+        destruct (decide (map_Exists (λ _ s, s = None) alloc')) as [(r & ? & Hr & ->) | Hfull].
+      * exists alloc'.
+        pose proof (buy_maintains _ _ _ _ Hbuy _ _ Hr) as Hr'.
+        destruct Hbuy as (alloc1 & Hbuy); exists alloc1.
+        destruct Hbuy as (? & ? & ? & Hprice & ?); repeat split; try done.
+        -- intros ?? Hbid%Hprice.
+           unfold bid in *.
+           rewrite lookup_insert_ne; try done.
+           intros <-; rewrite H2 in Hbid; lia.
+        -- intros ????.
+           unfold bid; rewrite lookup_insert.
+           destruct (decide (i = a)); subst; eauto.
+      * pose proof (buy_unused _ _ _ _ Hbuy) as Hunused.
+        pose proof (Hunused _ Hr) as Hr_none.
+        exists (<[r := Some i]>alloc').
+        destruct Hbuy as (alloc1 & Hbuy); exists (<[r := i]>alloc1).
+        destruct Hbuy as (Heq & ? & ? & Hprice & Hfull); repeat split; try done.
+        -- apply map_eq; intros r0.
+           rewrite map_lookup_imap.
+           rewrite !lookup_insert; destruct (decide (r = r0)) as [<- |]; first by rewrite Hr_none.
+           by rewrite Heq, map_lookup_imap.
+        -- intros r0 ?; rewrite lookup_insert.
+           destruct (decide (r = r0)) as [<- |]; first by rewrite Hr_none.
+           eauto.
+        -- intros r0 ?; rewrite lookup_insert.
+           destruct (decide (r = r0)) as [<- |]; last eauto.
+           inversion 1; subst.
+           apply map_not_Exists in Hneed.
+           by intros ? Ha; apply Hneed in Ha.
+        -- unfold bid; intros ?? Halloc.
+           rewrite lookup_insert; destruct (decide (i = a)); first done.
+           rewrite lookup_insert in Halloc; destruct (decide (r = r0)); first by inv Halloc.
+           eauto.
+        -- unfold bid; intros ? Hr1 Hr0 ??.
+           rewrite !lookup_insert in *.
+           destruct (decide (i = a)) as [-> |].
+           { eexists; apply lookup_insert_eq. }
+           destruct (decide (r = r0)); first done.
+           eapply Hfull in Hr0 as (? & ?); [|eauto..].
+           eexists; rewrite lookup_insert_ne; eauto; congruence.
+      * exists alloc'.
+        destruct Hbuy as (alloc1 & Hbuy); exists alloc1.
+        destruct Hbuy as (? & ? & ? & Hprice & ?); repeat split; try done.
+        -- intros ?? Hbid%Hprice.
+           unfold bid in *.
+           rewrite lookup_insert_ne; try done.
+           intros <-; rewrite H2 in Hbid; lia.
+        -- apply map_not_Exists in Hfull.
+           intros ? Hr1 Hr; specialize (Hfull r None); subst.
+           rewrite map_lookup_imap, Hr, Hr1 in Hfull; simpl in Hfull.
+           by specialize (Hfull eq_refl).
     + exists alloc'.
       (* participant i doesn't want to buy at this price, so is irrelevant to
          this step *)
       destruct Hbuy as (alloc1 & Hbuy); exists alloc1.
-      destruct Hbuy as (? & ? & ? & Hprice & ?); repeat split; try done.
+      destruct Hbuy as (? & ? & ? & Hprice & Hfull); repeat split; try done.
       * intros ?? Hbid%Hprice.
         unfold bid in *.
         rewrite lookup_insert_ne; try done.
         intros <-; rewrite H2 in Hbid; lia.
-Admitted.
+      * intros ???? Ha; eapply Hfull; eauto.
+        unfold bid in *.
+        rewrite lookup_insert in Ha; destruct (decide (i = a)); [lia | done].
+Qed.
 
 (* make up a bad pricing strategy, show how our system would catch and fix it *)
 (* Interesting extensions/refinements:
@@ -161,6 +272,7 @@ Admitted.
     3. lag between price change notification, user choices, and actual price change; shutdown and startup time
     4. concurrency issues at the market level
     5. downtime and minimum occupancy periods *)
+(*  6. non-unit demand, resources need to be contiguous *)
 
 Section event_lag.
 
