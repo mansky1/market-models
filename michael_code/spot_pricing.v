@@ -141,38 +141,6 @@ Qed.
 
 (** * Properties of the market under the coarse rule *)
 
-(* a participant who bids higher than the ceiling will never lose resource *)
-Lemma ceiling_bid_kept q q' r a :
-  priced_step band_rule q q' → C ≤ bid a →
-  allocation q.1 !! r = Some (Some a) → allocation q'.1 !! r = Some (Some a).
-Proof.
-Admitted.
-(* claude wrote this correct proof that i don't understand *)
-  (*  intros (_ & [_ Hceil] & Hsync & Hstep) Hbid Hr.
-  rewrite <- Hsync in Hceil.
-  (* buying never takes a resource from its holder, so it is enough that
-     a survives the drop phase *)
-  eapply buy_maintains; first done.
-  unfold drop_resources. rewrite lookup_fmap, Hr; simpl.
-  destruct (Nat.leb_spec0 (price q'.1) (bid a)); [done | lia].
-     Qed.*)
-
-(* a participant who bids at least the ceiling has a resource after the step, unless the market has run out.*)
-Lemma ceiling_bid_served q q' r a :
-  priced_step band_rule q q' → C ≤ bid a →
-  allocation q'.1 !! r = Some None → ∃ r', allocation q'.1 !! r' = Some (Some a).
-Proof.
-Admitted.
-(* a proof that Rocq accepts, kept out of the way as above --claude*)
-  (*  intros (_ & [_ Hceil] & Hsync & Hstep) Hbid Hr.
-  rewrite <- Hsync in Hceil.
-  (* a resource free after buying was free before *)
-  pose proof (buy_unused _ _ _ _ _ _ Hstep _ Hr) as Hr0.
-  destruct Hstep as (alloc1 & Hq' & _ & _ & _ & Hfree).
-  rewrite Hq', map_lookup_imap, Hr0 in Hr; simpl in Hr.
-  destruct (alloc1 !! r) eqn: Hr1; simplify_eq.
-  eapply (Hfree r); [done | done | lia].
-     Qed.*)
 
 Definition reachable (q0 q : state * pstate) : Prop := rtc (priced_step band_rule) q0 q.
 
@@ -183,7 +151,7 @@ Definition ceiling_served (q : state) : Prop :=
 
 (* if the market starts in a valid state with the price at most the ceiling,
    every state it can ever reach is ceiling_served.
-   validity is the invariant (valid_inv, from spot_market.v) *)
+   (uses valid_inv, from spot_market.v) *)
 Theorem always_ceiling_served q0 q :
   valid_state q0.1 → price q0.1 ≤ C → reachable q0 q → ceiling_served q.1.
 Proof.
@@ -250,7 +218,6 @@ Proof.
   case_decide; last lia. do 2 f_equal. lia.
 Qed.
 
-(* v0 fails for ar1 too: it ignores congestion, so negative noise lowers the price *)
 Theorem ar1_not_congested_no_fall_naive : F < C → ¬ congested_no_fall_naive (ar1_rule (-1)).
 Proof.
   intros ?. eapply congested_fall_refutes_naive; last by apply ar1_tick_down.
