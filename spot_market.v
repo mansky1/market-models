@@ -373,21 +373,21 @@ Section small_step.
 
 (* Does it make sense to model this happening step by step, or is it that
    the seller changes the price and then everyone reacts at once? *)
-Inductive market_step (q q' : state) : Prop :=
+Inductive market_step' (q q' : state) : Prop :=
 | change_price (same_alloc : q'.(allocation) = q.(allocation)):
-    market_step q q'
+    market_step' q q'
     (* Do priced-out participants drop right away, or does it take a step? *)
 | subscribe (a : participant) (r : resource)
-    (r_unused : q.(allocation) !! r = None)
-    (use_r : q'.(allocation) = <[r := a]>(q.(allocation)))
+    (r_unused : q.(allocation) !! r = Some None)
+    (use_r : q'.(allocation) = <[r := Some a]>(q.(allocation)))
     (same_price : q'.(price) = q.(price)) :
-    market_step q q'
+    market_step' q q'
     (* Is it important that multiple participants be able to act simultaneously? *)
 | unsubscribe (a : participant) (a : participant) (r : resource)
-    (r_used_by_a : q.(allocation) !! r = Some a)
+    (r_used_by_a : q.(allocation) !! r = Some (Some a))
     (drop_r : q'.(allocation) = delete r q.(allocation))
     (same_price : q'.(price) = q.(price)) :
-    market_step q q'.
+    market_step' q q'.
 
 End small_step.
 

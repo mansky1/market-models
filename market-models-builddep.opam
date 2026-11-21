@@ -1,0 +1,9 @@
+opam-version: "2.0"
+name: "market-models-builddep"
+version: "dev"
+synopsis: "Market Models"
+description: ""
+
+depends: [
+  "rocq-stdpp" { = "1.13.0" }
+]
